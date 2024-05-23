@@ -3,34 +3,36 @@ package ratelimiter
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 )
 
 var (
-	ErrBuf      = errors.New("buffor must be greater than 0")
+	ErrBurst    = errors.New("buffor must be greater than 0")
 	ErrInterval = errors.New("interval must be greater than 0")
 )
 
 type RateLimiter struct {
-	buf      uint
-	maxBuf   uint
+	mu       sync.Mutex
+	burst    uint
+	maxBurst uint
 	interval time.Duration
 	ticker   *time.Ticker
 }
 
 func NewRateLimiter(ctx context.Context, Interval time.Duration) (*RateLimiter, error) {
-	return NewRateLimiterWithBuffor(ctx, 1, Interval)
+	return NewRateLimiterWithBurst(ctx, 1, Interval)
 }
 
-func NewRateLimiterWithBuffor(ctx context.Context, Buffor int, Interval time.Duration) (*RateLimiter, error) {
-	if Buffor < 1 {
-		return nil, ErrBuf
+func NewRateLimiterWithBurst(ctx context.Context, burst int, interval time.Duration) (*RateLimiter, error) {
+	if burst < 1 {
+		return nil, ErrBurst
 	}
-	if Interval < 1 {
+	if interval < 1 {
 		return nil, ErrInterval
 	}
 
-	rl := &RateLimiter{buf: uint(Buffor), maxBuf: uint(Buffor), interval: Interval}
+	rl := &RateLimiter{burst: uint(burst), maxBurst: uint(burst), interval: interval}
 	rl.ticker = time.NewTicker(rl.interval)
 
 	go func() {
@@ -40,8 +42,8 @@ func NewRateLimiterWithBuffor(ctx context.Context, Buffor int, Interval time.Dur
 				rl.ticker.Stop()
 				return
 			case <-rl.ticker.C:
-				if rl.buf < rl.maxBuf {
-					rl.buf += 1
+				if rl.burst < rl.maxBurst {
+					rl.burst += 1
 				}
 			}
 		}
@@ -51,8 +53,11 @@ func NewRateLimiterWithBuffor(ctx context.Context, Buffor int, Interval time.Dur
 }
 
 func (rl *RateLimiter) Use() bool {
-	if rl.buf > 0 {
-		rl.buf -= 1
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if rl.burst > 0 {
+		rl.burst -= 1
 		rl.ticker.Reset(rl.interval)
 		return true
 	}
@@ -74,15 +79,23 @@ func (rl *RateLimiter) Wait() {
 	<-allow
 }
 
-func (rl *RateLimiter) Buffor() int {
-	return int(rl.maxBuf)
+func (rl *RateLimiter) MaxBurst() int {
+	return int(rl.maxBurst)
 }
 
-func (rl *RateLimiter) SetBuffor(newMaxBuf int) error {
-	if newMaxBuf < 1 {
-		return ErrBuf
+func (rl *RateLimiter) CurrentBurst() int {
+	return int(rl.burst)
+}
+
+func (rl *RateLimiter) SetBurst(newMaxBurst int) error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	if newMaxBurst < 1 {
+		return ErrBurst
 	}
-	rl.maxBuf = uint(newMaxBuf)
+
+	rl.maxBurst = uint(newMaxBurst)
 	return nil
 }
 
@@ -91,9 +104,13 @@ func (rl *RateLimiter) Interval() time.Duration {
 }
 
 func (rl *RateLimiter) SetInterval(newInterval time.Duration) error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
 	if newInterval < 1 {
 		return ErrInterval
 	}
+
 	rl.interval = newInterval
 	rl.ticker.Reset(rl.interval)
 	return nil
