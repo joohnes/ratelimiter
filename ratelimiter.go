@@ -20,11 +20,11 @@ type RateLimiter struct {
 	ticker   *time.Ticker
 }
 
-func NewRateLimiter(ctx context.Context, Interval time.Duration) (*RateLimiter, error) {
-	return NewRateLimiterWithBurst(ctx, 1, Interval)
+func NewRateLimiter(ctx context.Context, interval time.Duration) (*RateLimiter, error) {
+	return NewRateLimiterWithBurst(ctx, interval, 1)
 }
 
-func NewRateLimiterWithBurst(ctx context.Context, burst int, interval time.Duration) (*RateLimiter, error) {
+func NewRateLimiterWithBurst(ctx context.Context, interval time.Duration, burst int) (*RateLimiter, error) {
 	if burst < 1 {
 		return nil, ErrBurst
 	}
@@ -65,14 +65,19 @@ func (rl *RateLimiter) Use() bool {
 	return false
 }
 
-func (rl *RateLimiter) Wait() {
+func (rl *RateLimiter) Wait(ctx context.Context) {
 	allow := make(chan struct{})
 	defer close(allow)
 	go func() {
 		for {
-			if rl.Use() {
-				allow <- struct{}{}
+			select {
+			case <-ctx.Done():
 				return
+			default:
+				if rl.Use() {
+					allow <- struct{}{}
+					return
+				}
 			}
 		}
 	}()
