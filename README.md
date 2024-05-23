@@ -1,6 +1,11 @@
 # Simple Rate Limiter
 Simple rate limiter for golang with burst option
 
+## Installation
+```bash
+go get github.com/joohnes/ratelimiter
+```
+
 ## Usage
 ### Rate limiter without burst
 ```go
