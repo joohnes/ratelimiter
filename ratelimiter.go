@@ -2,15 +2,8 @@ package ratelimiter
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
-)
-
-var (
-	ErrBurst         = errors.New("buffor must be greater than 0")
-	ErrInterval      = errors.New("interval must be greater than 0")
-	ErrBurstInterval = errors.New("burst interval must be greater than 0")
 )
 
 type RateLimiter struct {
@@ -38,7 +31,7 @@ type RateLimiterOptions struct {
 	Interval      time.Duration
 }
 
-func NewRateLimiter(ctx context.Context, interval time.Duration) (*RateLimiter, error) {
+func NewRateLimiter(ctx context.Context, interval time.Duration) *RateLimiter {
 	opts := RateLimiterOptions{
 		BurstAmount:   1,
 		BurstInterval: interval,
@@ -47,12 +40,12 @@ func NewRateLimiter(ctx context.Context, interval time.Duration) (*RateLimiter, 
 	return NewRateLimiterWithBurst(ctx, opts)
 }
 
-func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) (*RateLimiter, error) {
+func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) *RateLimiter {
 	if opts.BurstAmount < 1 {
-		return nil, ErrBurst
+		opts.BurstAmount = 1
 	}
 	if opts.Interval < 1 {
-		return nil, ErrInterval
+		opts.Interval = time.Second
 	}
 
 	rl := &RateLimiter{
@@ -78,7 +71,7 @@ func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) (*Rat
 		}
 	}()
 
-	return rl, nil
+	return rl
 }
 
 func (rl *RateLimiter) Use() bool {
@@ -122,16 +115,15 @@ func (rl *RateLimiter) CurrentBurst() int {
 	return int(rl.burst)
 }
 
-func (rl *RateLimiter) SetBurst(newMaxBurst int) error {
+func (rl *RateLimiter) SetBurst(newMaxBurst int) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	if newMaxBurst < 1 {
-		return ErrBurst
+		newMaxBurst = 1
 	}
 
 	rl.maxBurst = uint(newMaxBurst)
-	return nil
 }
 
 func (rl *RateLimiter) ResetBurst() {
@@ -145,30 +137,28 @@ func (rl *RateLimiter) BurstInterval() time.Duration {
 	return rl.burstInterval
 }
 
-func (rl *RateLimiter) SetBurstInterval(newBurstInterval time.Duration) error {
+func (rl *RateLimiter) SetBurstInterval(newBurstInterval time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	if newBurstInterval < 1 {
-		return ErrBurstInterval
+		newBurstInterval = time.Second
 	}
 
 	rl.burstInterval = newBurstInterval
-	return nil
 }
 
 func (rl *RateLimiter) Interval() time.Duration {
 	return rl.interval
 }
 
-func (rl *RateLimiter) SetInterval(newInterval time.Duration) error {
+func (rl *RateLimiter) SetInterval(newInterval time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	if newInterval < 1 {
-		return ErrInterval
+		newInterval = time.Second
 	}
 
 	rl.interval = newInterval
 	rl.ticker.Reset(rl.interval)
-	return nil
 }
