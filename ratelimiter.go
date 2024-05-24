@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrBurst    = errors.New("buffor must be greater than 0")
-	ErrInterval = errors.New("interval must be greater than 0")
+	ErrBurst         = errors.New("buffor must be greater than 0")
+	ErrInterval      = errors.New("interval must be greater than 0")
+	ErrBurstInterval = errors.New("burst interval must be greater than 0")
 )
 
 type RateLimiter struct {
@@ -130,6 +131,28 @@ func (rl *RateLimiter) SetBurst(newMaxBurst int) error {
 	}
 
 	rl.maxBurst = uint(newMaxBurst)
+	return nil
+}
+
+func (rl *RateLimiter) ResetBurst() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	rl.burst = rl.maxBurst
+}
+
+func (rl *RateLimiter) BurstInterval() time.Duration {
+	return rl.burstInterval
+}
+
+func (rl *RateLimiter) SetBurstInterval(newBurstInterval time.Duration) error {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	if newBurstInterval < 1 {
+		return ErrBurstInterval
+	}
+
+	rl.burstInterval = newBurstInterval
 	return nil
 }
 
