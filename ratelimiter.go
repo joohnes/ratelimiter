@@ -13,9 +13,9 @@ type RateLimiter struct {
 	maxBurst      uint
 	burstInterval time.Duration
 
-	expiry   time.Time
-	interval time.Duration
-	ticker   *time.Ticker
+	burstCooldown time.Time
+	interval      time.Duration
+	ticker        *time.Ticker
 }
 
 // RateLimiterOptions is a struct that holds the options for the RateLimiter
@@ -25,14 +25,14 @@ type RateLimiter struct {
 // # BurstInterval is the minimum time between each use in a burst
 //
 // # Interval is the time to wait for the burst to refill by one
-type RateLimiterOptions struct {
+type Options struct {
 	BurstAmount   int
 	BurstInterval time.Duration
 	Interval      time.Duration
 }
 
 func NewRateLimiter(ctx context.Context, interval time.Duration) *RateLimiter {
-	opts := RateLimiterOptions{
+	opts := Options{
 		BurstAmount:   1,
 		BurstInterval: interval,
 		Interval:      interval,
@@ -40,7 +40,7 @@ func NewRateLimiter(ctx context.Context, interval time.Duration) *RateLimiter {
 	return NewRateLimiterWithBurst(ctx, opts)
 }
 
-func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) *RateLimiter {
+func NewRateLimiterWithBurst(ctx context.Context, opts Options) *RateLimiter {
 	if opts.BurstAmount < 1 {
 		opts.BurstAmount = 1
 	}
@@ -53,19 +53,21 @@ func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) *Rate
 		maxBurst:      uint(opts.BurstAmount),
 		interval:      opts.Interval,
 		burstInterval: opts.BurstInterval,
-		expiry:        time.Now(),
+		burstCooldown: time.Now(),
 	}
 	rl.ticker = time.NewTicker(rl.interval)
+	defer rl.ticker.Stop()
 
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
-				rl.ticker.Stop()
 				return
 			case <-rl.ticker.C:
 				if rl.burst < rl.maxBurst {
+					rl.mu.Lock()
 					rl.burst += 1
+					rl.mu.Unlock()
 				}
 			}
 		}
@@ -75,11 +77,11 @@ func NewRateLimiterWithBurst(ctx context.Context, opts RateLimiterOptions) *Rate
 }
 
 func (rl *RateLimiter) Use() bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+	if rl.burst > 0 && rl.burstCooldown.Before(time.Now()) {
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
 
-	if rl.burst > 0 && rl.expiry.Before(time.Now()) {
-		rl.expiry = time.Now().Add(rl.burstInterval)
+		rl.burstCooldown = time.Now().Add(rl.burstInterval)
 		rl.burst -= 1
 		rl.ticker.Reset(rl.interval)
 		return true
